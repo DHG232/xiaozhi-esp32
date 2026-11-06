@@ -13,7 +13,7 @@ BoxAudioCodec::BoxAudioCodec(void* i2c_master_handle, int input_sample_rate, int
                              int reference_gain_channel, float reference_gain, float pa_voltage) {
     duplex_ = true;                              // 是否双工
     input_reference_ = input_reference;          // 是否使用参考输入，实现回声消除
-    input_channels_ = input_reference_ ? 2 : 1;  // 输入通道数
+    input_channels_ = input_reference_ ? 3 : 2;  // 输入通道数
     input_sample_rate_ = input_sample_rate;
     output_sample_rate_ = output_sample_rate;
     input_gain_ = input_gain;
@@ -199,16 +199,15 @@ void BoxAudioCodec::EnableInput(bool enable) {
         esp_codec_dev_sample_info_t fs = {
             .bits_per_sample = 16,
             .channel = 4,
-            .channel_mask = ESP_CODEC_DEV_MAKE_CHANNEL_MASK(0),
+            .channel_mask = ESP_CODEC_DEV_MAKE_CHANNEL_MASK(0) | ESP_CODEC_DEV_MAKE_CHANNEL_MASK(1) |ESP_CODEC_DEV_MAKE_CHANNEL_MASK(2),
             .sample_rate = (uint32_t)output_sample_rate_,
             .mclk_multiple = 0,
         };
-        if (input_reference_) {
-            fs.channel_mask |= ESP_CODEC_DEV_MAKE_CHANNEL_MASK(1);
-        }
         ESP_ERROR_CHECK(esp_codec_dev_open(input_dev_, &fs));
         ESP_ERROR_CHECK(esp_codec_dev_set_in_channel_gain(
             input_dev_, ESP_CODEC_DEV_MAKE_CHANNEL_MASK(0), input_gain_));
+        ESP_ERROR_CHECK(esp_codec_dev_set_in_channel_gain(
+            input_dev_, ESP_CODEC_DEV_MAKE_CHANNEL_MASK(1), input_gain_));
         if (input_reference_ && reference_gain_channel_ >= 0) {
             // ES7210 gain masks use physical MIC numbering, which differs
             // from the TDM slot order (MIC1, MIC3, MIC2, MIC4).
@@ -244,13 +243,26 @@ void BoxAudioCodec::EnableOutput(bool enable) {
     AudioCodec::EnableOutput(enable);
 }
 
+// int BoxAudioCodec::Read(int16_t* dest, int samples) {
+//     if (input_enabled_) {
+//         ESP_ERROR_CHECK_WITHOUT_ABORT(esp_codec_dev_read(input_dev_, (void*)dest, samples * sizeof(int16_t)));
+//     }
+//     return samples;
+// }
 int BoxAudioCodec::Read(int16_t* dest, int samples) {
     if (input_enabled_) {
         ESP_ERROR_CHECK_WITHOUT_ABORT(esp_codec_dev_read(input_dev_, (void*)dest, samples * sizeof(int16_t)));
+        
+        if (input_reference_ && input_channels_ == 3) {
+            for (int i = 0; i < samples; i += 3) {
+                int16_t temp = dest[i + 1];
+                dest[i + 1] = dest[i + 2];
+                dest[i + 2] = temp;
+            }
+        }
     }
     return samples;
 }
-
 int BoxAudioCodec::Write(const int16_t* data, int samples) {
     if (output_enabled_) {
         ESP_ERROR_CHECK_WITHOUT_ABORT(esp_codec_dev_write(output_dev_, (void*)data, samples * sizeof(int16_t)));
