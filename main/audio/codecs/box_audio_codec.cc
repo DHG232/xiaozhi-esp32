@@ -1,9 +1,289 @@
+// #include "box_audio_codec.h"
+
+// #include <esp_log.h>
+// #include <driver/i2c_master.h>
+// #include <driver/i2s_tdm.h>
+
+// #define TAG "BoxAudioCodec"
+
+// BoxAudioCodec::BoxAudioCodec(void* i2c_master_handle, int input_sample_rate, int output_sample_rate,
+//                              gpio_num_t mclk, gpio_num_t bclk, gpio_num_t ws, gpio_num_t dout,
+//                              gpio_num_t din, gpio_num_t pa_pin, uint8_t es8311_addr,
+//                              uint8_t es7210_addr, bool input_reference, float input_gain,
+//                              int reference_gain_channel, float reference_gain, float pa_voltage) {
+//     duplex_ = true;                              // 是否双工
+//     input_reference_ = input_reference;          // 是否使用参考输入，实现回声消除
+//     input_channels_ = input_reference_ ? 2 : 1;  // 输入通道数
+//     input_sample_rate_ = input_sample_rate;
+//     output_sample_rate_ = output_sample_rate;
+//     input_gain_ = input_gain;
+//     reference_gain_channel_ = reference_gain_channel;
+//     reference_gain_ = reference_gain;
+
+//     CreateDuplexChannels(mclk, bclk, ws, dout, din);
+
+//     // Do initialize of related interface: data_if, ctrl_if and gpio_if
+//     audio_codec_i2s_cfg_t i2s_cfg = {
+//         .port = I2S_NUM_0,
+//         .rx_handle = rx_handle_,
+//         .tx_handle = tx_handle_,
+//     };
+//     data_if_ = audio_codec_new_i2s_data(&i2s_cfg);
+//     assert(data_if_ != NULL);
+
+//     // Output
+//     audio_codec_i2c_cfg_t i2c_cfg = {
+//         .port = (i2c_port_t)1,
+//         .addr = es8311_addr,
+//         .bus_handle = i2c_master_handle,
+//     };
+//     out_ctrl_if_ = audio_codec_new_i2c_ctrl(&i2c_cfg);
+//     assert(out_ctrl_if_ != NULL);
+
+//     gpio_if_ = audio_codec_new_gpio();
+//     assert(gpio_if_ != NULL);
+
+//     es8311_codec_cfg_t es8311_cfg = {};
+//     es8311_cfg.ctrl_if = out_ctrl_if_;
+//     es8311_cfg.gpio_if = gpio_if_;
+//     es8311_cfg.codec_mode = ESP_CODEC_DEV_WORK_MODE_DAC;
+//     es8311_cfg.pa_pin = pa_pin;
+//     es8311_cfg.use_mclk = true;
+//     es8311_cfg.hw_gain.pa_voltage = pa_voltage;
+//     es8311_cfg.hw_gain.codec_dac_voltage = 3.3;
+//     out_codec_if_ = es8311_codec_new(&es8311_cfg);
+//     assert(out_codec_if_ != NULL);
+
+//     esp_codec_dev_cfg_t dev_cfg = {
+//         .dev_type = ESP_CODEC_DEV_TYPE_OUT,
+//         .codec_if = out_codec_if_,
+//         .data_if = data_if_,
+//     };
+//     output_dev_ = esp_codec_dev_new(&dev_cfg);
+//     assert(output_dev_ != NULL);
+
+//     // Input
+//     i2c_cfg.addr = es7210_addr;
+//     in_ctrl_if_ = audio_codec_new_i2c_ctrl(&i2c_cfg);
+//     assert(in_ctrl_if_ != NULL);
+
+//     es7210_codec_cfg_t es7210_cfg = {};
+//     es7210_cfg.ctrl_if = in_ctrl_if_;
+//     es7210_cfg.mic_selected = ES7210_SEL_MIC1 | ES7210_SEL_MIC2 | ES7210_SEL_MIC3 | ES7210_SEL_MIC4;
+//     in_codec_if_ = es7210_codec_new(&es7210_cfg);
+//     assert(in_codec_if_ != NULL);
+
+//     dev_cfg.dev_type = ESP_CODEC_DEV_TYPE_IN;
+//     dev_cfg.codec_if = in_codec_if_;
+//     input_dev_ = esp_codec_dev_new(&dev_cfg);
+//     assert(input_dev_ != NULL);
+
+//     ESP_LOGI(TAG, "BoxAudioDevice initialized");
+// }
+
+// BoxAudioCodec::~BoxAudioCodec() {
+//     ESP_ERROR_CHECK(esp_codec_dev_close(output_dev_));
+//     esp_codec_dev_delete(output_dev_);
+//     ESP_ERROR_CHECK(esp_codec_dev_close(input_dev_));
+//     esp_codec_dev_delete(input_dev_);
+
+//     audio_codec_delete_codec_if(in_codec_if_);
+//     audio_codec_delete_ctrl_if(in_ctrl_if_);
+//     audio_codec_delete_codec_if(out_codec_if_);
+//     audio_codec_delete_ctrl_if(out_ctrl_if_);
+//     audio_codec_delete_gpio_if(gpio_if_);
+//     audio_codec_delete_data_if(data_if_);
+// }
+
+// void BoxAudioCodec::CreateDuplexChannels(gpio_num_t mclk, gpio_num_t bclk, gpio_num_t ws, gpio_num_t dout, gpio_num_t din) {
+//     assert(input_sample_rate_ == output_sample_rate_);
+
+//     i2s_chan_config_t chan_cfg = {
+//         .id = I2S_NUM_0,
+//         .role = I2S_ROLE_MASTER,
+//         .dma_desc_num = AUDIO_CODEC_DMA_DESC_NUM,
+//         .dma_frame_num = AUDIO_CODEC_DMA_FRAME_NUM,
+//         .auto_clear_after_cb = true,
+//         .auto_clear_before_cb = false,
+//         .intr_priority = 0,
+//     };
+//     ESP_ERROR_CHECK(i2s_new_channel(&chan_cfg, &tx_handle_, &rx_handle_));
+
+//     i2s_std_config_t std_cfg = {
+//         .clk_cfg = {
+//             .sample_rate_hz = (uint32_t)output_sample_rate_,
+//             .clk_src = I2S_CLK_SRC_DEFAULT,
+//             .ext_clk_freq_hz = 0,
+//             .mclk_multiple = I2S_MCLK_MULTIPLE_256
+//         },
+//         .slot_cfg = {
+//             .data_bit_width = I2S_DATA_BIT_WIDTH_16BIT,
+//             .slot_bit_width = I2S_SLOT_BIT_WIDTH_AUTO,
+//             .slot_mode = I2S_SLOT_MODE_STEREO,
+//             .slot_mask = I2S_STD_SLOT_BOTH,
+//             .ws_width = I2S_DATA_BIT_WIDTH_16BIT,
+//             .ws_pol = false,
+//             .bit_shift = true,
+//             .left_align = true,
+//             .big_endian = false,
+//             .bit_order_lsb = false
+//         },
+//         .gpio_cfg = {
+//             .mclk = mclk,
+//             .bclk = bclk,
+//             .ws = ws,
+//             .dout = dout,
+//             .din = I2S_GPIO_UNUSED,
+//             .invert_flags = {
+//                 .mclk_inv = false,
+//                 .bclk_inv = false,
+//                 .ws_inv = false
+//             }
+//         }
+//     };
+
+//     i2s_tdm_config_t tdm_cfg = {
+//         .clk_cfg = {
+//             .sample_rate_hz = (uint32_t)input_sample_rate_,
+//             .clk_src = I2S_CLK_SRC_DEFAULT,
+//             .ext_clk_freq_hz = 0,
+//             .mclk_multiple = I2S_MCLK_MULTIPLE_256,
+//             .bclk_div = 8,
+//         },
+//         .slot_cfg = {
+//             .data_bit_width = I2S_DATA_BIT_WIDTH_16BIT,
+//             .slot_bit_width = I2S_SLOT_BIT_WIDTH_AUTO,
+//             .slot_mode = I2S_SLOT_MODE_STEREO,
+//             .slot_mask = i2s_tdm_slot_mask_t(I2S_TDM_SLOT0 | I2S_TDM_SLOT1 | I2S_TDM_SLOT2 | I2S_TDM_SLOT3),
+//             .ws_width = I2S_TDM_AUTO_WS_WIDTH,
+//             .ws_pol = false,
+//             .bit_shift = true,
+//             .left_align = false,
+//             .big_endian = false,
+//             .bit_order_lsb = false,
+//             .skip_mask = false,
+//             .total_slot = I2S_TDM_AUTO_SLOT_NUM
+//         },
+//         .gpio_cfg = {
+//             .mclk = mclk,
+//             .bclk = bclk,
+//             .ws = ws,
+//             .dout = I2S_GPIO_UNUSED,
+//             .din = din,
+//             .invert_flags = {
+//                 .mclk_inv = false,
+//                 .bclk_inv = false,
+//                 .ws_inv = false
+//             }
+//         }
+//     };
+
+//     ESP_ERROR_CHECK(i2s_channel_init_std_mode(tx_handle_, &std_cfg));
+//     ESP_ERROR_CHECK(i2s_channel_init_tdm_mode(rx_handle_, &tdm_cfg));
+//     ESP_ERROR_CHECK(i2s_channel_enable(tx_handle_));
+//     ESP_ERROR_CHECK(i2s_channel_enable(rx_handle_));
+//     ESP_LOGI(TAG, "Duplex channels created");
+// }
+
+// void BoxAudioCodec::SetOutputVolume(int volume) {
+//     ESP_ERROR_CHECK(esp_codec_dev_set_out_vol(output_dev_, volume));
+//     AudioCodec::SetOutputVolume(volume);
+// }
+
+// void BoxAudioCodec::EnableInput(bool enable) {
+//     std::lock_guard<std::mutex> lock(data_if_mutex_);
+//     if (enable == input_enabled_) {
+//         return;
+//     }
+//     if (enable) {
+//         esp_codec_dev_sample_info_t fs = {
+//             .bits_per_sample = 16,
+//             .channel = 4,
+//             .channel_mask = ESP_CODEC_DEV_MAKE_CHANNEL_MASK(0),
+//             .sample_rate = (uint32_t)output_sample_rate_,
+//             .mclk_multiple = 0,
+//         };
+//         if (input_reference_) {
+//             fs.channel_mask |= ESP_CODEC_DEV_MAKE_CHANNEL_MASK(1);
+//         }
+//         ESP_ERROR_CHECK(esp_codec_dev_open(input_dev_, &fs));
+//         ESP_ERROR_CHECK(esp_codec_dev_set_in_channel_gain(
+//             input_dev_, ESP_CODEC_DEV_MAKE_CHANNEL_MASK(0), input_gain_));
+//         if (input_reference_ && reference_gain_channel_ >= 0) {
+//             // ES7210 gain masks use physical MIC numbering, which differs
+//             // from the TDM slot order (MIC1, MIC3, MIC2, MIC4).
+//             ESP_ERROR_CHECK(esp_codec_dev_set_in_channel_gain(
+//                 input_dev_, ESP_CODEC_DEV_MAKE_CHANNEL_MASK(reference_gain_channel_),
+//                 reference_gain_));
+//         }
+//     } else {
+//         ESP_ERROR_CHECK(esp_codec_dev_close(input_dev_));
+//     }
+//     AudioCodec::EnableInput(enable);
+// }
+
+// void BoxAudioCodec::EnableOutput(bool enable) {
+//     std::lock_guard<std::mutex> lock(data_if_mutex_);
+//     if (enable == output_enabled_) {
+//         return;
+//     }
+//     if (enable) {
+//         // Play 16bit 1 channel
+//         esp_codec_dev_sample_info_t fs = {
+//             .bits_per_sample = 16,
+//             .channel = 1,
+//             .channel_mask = 0,
+//             .sample_rate = (uint32_t)output_sample_rate_,
+//             .mclk_multiple = 0,
+//         };
+//         ESP_ERROR_CHECK(esp_codec_dev_open(output_dev_, &fs));
+//         ESP_ERROR_CHECK(esp_codec_dev_set_out_vol(output_dev_, output_volume_));
+//     } else {
+//         ESP_ERROR_CHECK(esp_codec_dev_close(output_dev_));
+//     }
+//     AudioCodec::EnableOutput(enable);
+// }
+
+// int BoxAudioCodec::Read(int16_t* dest, int samples) {
+//     if (input_enabled_) {
+//         ESP_ERROR_CHECK_WITHOUT_ABORT(esp_codec_dev_read(input_dev_, (void*)dest, samples * sizeof(int16_t)));
+//     }
+//     return samples;
+// }
+
+// int BoxAudioCodec::Write(const int16_t* data, int samples) {
+//     if (output_enabled_) {
+//         ESP_ERROR_CHECK_WITHOUT_ABORT(esp_codec_dev_write(output_dev_, (void*)data, samples * sizeof(int16_t)));
+//     }
+//     return samples;
+// }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 #include "box_audio_codec.h"
 
 #include <esp_log.h>
 #include <driver/i2c_master.h>
 #include <driver/i2s_tdm.h>
-
+#include <cmath>
 #define TAG "BoxAudioCodec"
 
 BoxAudioCodec::BoxAudioCodec(void* i2c_master_handle, int input_sample_rate, int output_sample_rate,
@@ -199,7 +479,7 @@ void BoxAudioCodec::EnableInput(bool enable) {
         esp_codec_dev_sample_info_t fs = {
             .bits_per_sample = 16,
             .channel = 4,
-            .channel_mask = ESP_CODEC_DEV_MAKE_CHANNEL_MASK(0),
+            .channel_mask = ESP_CODEC_DEV_MAKE_CHANNEL_MASK(2),
             .sample_rate = (uint32_t)output_sample_rate_,
             .mclk_multiple = 0,
         };
@@ -208,7 +488,11 @@ void BoxAudioCodec::EnableInput(bool enable) {
         }
         ESP_ERROR_CHECK(esp_codec_dev_open(input_dev_, &fs));
         ESP_ERROR_CHECK(esp_codec_dev_set_in_channel_gain(
-            input_dev_, ESP_CODEC_DEV_MAKE_CHANNEL_MASK(0), input_gain_));
+            input_dev_, ESP_CODEC_DEV_MAKE_CHANNEL_MASK(3), 50));
+        // for (int ch = 0; ch < 4; ch++) {
+        //     ESP_ERROR_CHECK(esp_codec_dev_set_in_channel_gain(
+        //         input_dev_, ESP_CODEC_DEV_MAKE_CHANNEL_MASK(ch), input_gain_));
+        // }
         if (input_reference_ && reference_gain_channel_ >= 0) {
             // ES7210 gain masks use physical MIC numbering, which differs
             // from the TDM slot order (MIC1, MIC3, MIC2, MIC4).
@@ -216,6 +500,9 @@ void BoxAudioCodec::EnableInput(bool enable) {
                 input_dev_, ESP_CODEC_DEV_MAKE_CHANNEL_MASK(reference_gain_channel_),
                 reference_gain_));
         }
+        float input_gain_test;
+        esp_codec_dev_get_in_gain(input_dev_, &input_gain_test);
+        ESP_LOGE(TAG, "Input gain: %.1f", input_gain_test);
     } else {
         ESP_ERROR_CHECK(esp_codec_dev_close(input_dev_));
     }
@@ -244,12 +531,72 @@ void BoxAudioCodec::EnableOutput(bool enable) {
     AudioCodec::EnableOutput(enable);
 }
 
+// int BoxAudioCodec::Read(int16_t* dest, int samples) {
+//     if (input_enabled_) {
+//         ESP_ERROR_CHECK_WITHOUT_ABORT(esp_codec_dev_read(input_dev_, (void*)dest, samples * sizeof(int16_t)));
+//     }
+//     return samples;
+// }
 int BoxAudioCodec::Read(int16_t* dest, int samples) {
     if (input_enabled_) {
-        ESP_ERROR_CHECK_WITHOUT_ABORT(esp_codec_dev_read(input_dev_, (void*)dest, samples * sizeof(int16_t)));
+        ESP_ERROR_CHECK_WITHOUT_ABORT(
+            esp_codec_dev_read(input_dev_, (void*)dest, samples * sizeof(int16_t)));
+            for (int i = 0; i + 1 < samples; i += 2) {
+                int16_t tmp = dest[i];
+                dest[i] = dest[i + 1];
+                dest[i + 1] = tmp;
+            }
     }
+    int32_t rms0 = 0, rms1 = 0;
+            for (int i = 0; i + 1 < samples; i += 2) {
+                rms0 += dest[i] * dest[i];
+                rms1 += dest[i + 1] * dest[i + 1];
+            }
+            ESP_LOGI(TAG, "RAW ch0_rms=%ld ch1_rms=%ld",
+                     (long)sqrtf(rms0 / (samples / 2)),
+                     (long)sqrtf(rms1 / (samples / 2)));
     return samples;
 }
+
+// int BoxAudioCodec::Read(int16_t* dest, int samples) {
+//     if (input_enabled_) {
+//         // 上层要 2 通道数据：frames = samples / 2
+//         int frames = samples / 2;
+//         int total_4ch = frames * 4;
+
+//         // 临时 buffer 接收 4 通道原始数据（按需调大）
+//         static int16_t buf4[8192];
+//         if (total_4ch > (int)(sizeof(buf4) / sizeof(buf4[0]))) {
+//             ESP_LOGE(TAG, "samples too large: frames=%d total_4ch=%d", frames, total_4ch);
+//             return samples;
+//         }
+
+//         ESP_ERROR_CHECK_WITHOUT_ABORT(
+//             esp_codec_dev_read(input_dev_, (void*)buf4, total_4ch * sizeof(int16_t)));
+
+//         // 打印 4 路 RMS，slot0~slot3
+//         int32_t rms[4] = {0, 0, 0, 0};
+//         for (int i = 0; i < total_4ch; i += 4) {
+//             for (int ch = 0; ch < 4; ch++) {
+//                 int16_t v = buf4[i + ch];
+//                 rms[ch] += (int32_t)v * v;
+//             }
+//         }
+//         ESP_LOGI(TAG, "4ch RMS: slot0=%ld slot1=%ld slot2=%ld slot3=%ld",
+//                  (long)sqrtf(rms[0] / frames),
+//                  (long)sqrtf(rms[1] / frames),
+//                  (long)sqrtf(rms[2] / frames),
+//                  (long)sqrtf(rms[3] / frames));
+
+//         // 按当前配置挑选 2 路给上层：
+//         // 假设要 MIC2 作主麦(slot2) + MIC3 作参考(slot1)
+//         for (int i = 0; i < frames; i++) {
+//             dest[i * 2]     = buf4[i * 4 + 2];  // 通道0 = slot2 = MIC2
+//             dest[i * 2 + 1] = buf4[i * 4 + 1];  // 通道1 = slot1 = MIC3
+//         }
+//     }
+//     return samples;
+// }
 
 int BoxAudioCodec::Write(const int16_t* data, int samples) {
     if (output_enabled_) {
